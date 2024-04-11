@@ -1,9 +1,9 @@
 pragma solidity >=0.7.0 <0.9.0;
 
 /*
- *  Idea - RedVsBlue is a one-side-wins-it-all voting game.
+ *  Idea - YES/NO is a one-side-wins-it-all voting game.
  *
- *  There are two sides, Red, and Blue. You pick which one you want and cast
+ *  There are two sides, YES, and NO. You pick which one you want and cast
  *  a vote for the corresponding side. Each poll runs for some specified amount
  *  of time - this can be done daily or weekly by the contract owner.
  *
@@ -114,7 +114,7 @@ contract YesNo {
      *  a `game` which spans `BLOCK_DIV` blocks.
      */
     struct Vote {
-        uint256 game_id /* block.number / `BLOCK_DIV` */;
+        uint256 game_id /* block.number / `BLOCK_DIV` */; // Only for the event info
         uint256 amount /* credits, 1 eth = 1000 credits */;
         VoteType vote_type /* yes or no? */;
     }
@@ -152,7 +152,7 @@ contract YesNo {
 
     address public owner_address;
 
-    constructor() public {
+    constructor() {
         owner_address = msg.sender;
     }
 
@@ -166,7 +166,7 @@ contract YesNo {
     function WithdrawCredits(uint amount) public {
         require(amount <= voters[msg.sender].credits, "Need more minerals");
         voters[msg.sender].credits = voters[msg.sender].credits.sub(amount);
-        msg.sender.transfer(amount);
+        payable(msg.sender).transfer(amount);
     }
 
     function GetCreditBalance() public view returns (uint) {
