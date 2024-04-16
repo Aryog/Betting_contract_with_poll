@@ -252,14 +252,15 @@ contract YesNo {
         v.game_id = block.number / BLOCK_DIV;
         v.amount = amount;
         v.vote_type = vote_type;
+        uint256 gameID = block.number / BLOCK_DIV;
         if (vote_type == VoteType.VOTE_YES) {
-            poll_totals[block.number / BLOCK_DIV].yes_total = poll_totals[
-                block.number / BLOCK_DIV
-            ].yes_total.add(amount);
+            poll_totals[gameID].yes_total = poll_totals[gameID].yes_total.add(
+                amount
+            );
         } else if (vote_type == VoteType.VOTE_NO) {
-            poll_totals[block.number / BLOCK_DIV].no_total = poll_totals[
-                block.number / BLOCK_DIV
-            ].no_total.add(amount);
+            poll_totals[gameID].no_total = poll_totals[gameID].no_total.add(
+                amount
+            );
         }
         voters[msg.sender].credits = voters[msg.sender].credits.sub(amount);
         voters[msg.sender].votes[block.number / BLOCK_DIV].push(v);
@@ -267,6 +268,22 @@ contract YesNo {
     }
 
     ////////////////////////////////////////////////////////////////////////////
+
+    function GetWinner() public view returns (string memory) {
+        uint current_game_id = block.number / BLOCK_DIV;
+        require(current_game_id > 0, "No game has finished yet");
+
+        uint256 yesTotal = poll_totals[current_game_id].yes_total;
+        uint256 noTotal = poll_totals[current_game_id].no_total;
+
+        if (yesTotal > noTotal) {
+            return "YES";
+        } else if (noTotal > yesTotal) {
+            return "NO";
+        } else {
+            return "DRAW";
+        }
+    }
 }
 
 /******************************************************************************/
