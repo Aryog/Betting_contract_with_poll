@@ -268,7 +268,7 @@ contract YesNo {
 
     // Function to get the winner of the current game
     function GetWinner() public view returns (string memory) {
-        uint256 current_game_id = block.timestamp / pollEndTime;
+        uint256 current_game_id = pollEndTime / block.timestamp;
         // require(current_game_id > 0, "No game has finished yet");
         require(pollEndTime < block.timestamp, "No game has finished yet");
 
