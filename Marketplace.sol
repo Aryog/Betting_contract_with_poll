@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.7.0 <0.9.0;
 
-import "./YesNo.sol";
+import "./YesNo1.sol";
 
 contract Marketplace {
     enum Winner {
@@ -13,7 +13,7 @@ contract Marketplace {
 
     struct YesNoContractInfo {
         uint256 contractId;
-        YesNo contractInstance;
+        address contractInstance;
         bool isArchived;
         uint256 endTime;
         Winner winner;
@@ -26,12 +26,15 @@ contract Marketplace {
 
     constructor() {}
 
-    function createYesNoContract(uint256 endTime) external {
-        YesNo newYesNoContract = new YesNo();
+    function createYesNoContract(uint256 endTime) external payable {
+        YesNo newYesNoContract = (new YesNo{value: msg.value})(
+            endTime,
+            msg.sender
+        );
         ownerToYesNoContract[msg.sender].push(
             YesNoContractInfo(
                 nextContractId,
-                newYesNoContract,
+                address(newYesNoContract),
                 false,
                 endTime,
                 Winner.YETNOTCONFIRMED
@@ -43,7 +46,7 @@ contract Marketplace {
 
     function archiveYesNoContract(uint256 contractId) external {
         require(
-            ownerToYesNoContract[msg.sender].length > contractId,
+            ownerToYesNoContract[msg.sender].length >= contractId,
             "Invalid contractId"
         );
         YesNoContractInfo storage contractInfo = ownerToYesNoContract[
@@ -54,12 +57,13 @@ contract Marketplace {
             "Contract not ended yet"
         );
         require(
-            msg.sender == contractInfo.contractInstance.owner_address(),
+            msg.sender == YesNo(contractInfo.contractInstance).getOwner(),
             "Only owner can archive"
         );
 
         // Calculate the winner using the GetWinner function from the YesNo contract
-        string memory winnerString = contractInfo.contractInstance.GetWinner();
+        string memory winnerString = YesNo(contractInfo.contractInstance)
+            .GetWinner();
         Winner winner;
         if (
             keccak256(abi.encodePacked((winnerString))) ==

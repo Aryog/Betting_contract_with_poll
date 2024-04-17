@@ -131,18 +131,29 @@ contract YesNo {
     event NewVoteCast(); // Event emitted when a new vote is cast
 
     address public owner_address; // Address of the contract owner
+    address private marketplace;
 
     // Constructor function to initialize the contract
-    constructor(uint256 _seconds) payable {
+    constructor(uint256 _seconds, address _owner) payable {
         require(msg.value >= 10 wei, "Minimum deposit of 10 wei required");
-        owner_address = msg.sender; // Set the contract owner address
+        owner_address = _owner; // Set the contract owner address
+        marketplace = msg.sender;
         setPollEndTime(_seconds);
     }
 
+    // Here after the necessary checks only the marketplace is the owner
     modifier onlyOwner() {
         require(
             msg.sender == owner_address,
             "Only the contract owner can call this function"
+        );
+        _;
+    }
+
+    modifier onlyMarketPlace() {
+        require(
+            msg.sender == marketplace,
+            "Only marketplace can set the endTime"
         );
         _;
     }
@@ -297,13 +308,17 @@ contract YesNo {
         return (block.number, block.timestamp, block.number);
     }
 
-    function setPollEndTime(uint256 _seconds) private onlyOwner {
+    function setPollEndTime(uint256 _seconds) private onlyMarketPlace {
         pollEndTime = (block.timestamp).add(_seconds); // 60 seconds for voting
     }
 
     // Function to set the end time for voting
     function checkPollEndTime() public view returns (uint256) {
         return pollEndTime;
+    }
+
+    function getOwner() public view returns (address) {
+        return owner_address;
     }
 }
 
