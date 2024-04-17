@@ -133,7 +133,8 @@ contract YesNo {
     address public owner_address; // Address of the contract owner
 
     // Constructor function to initialize the contract
-    constructor(uint256 _seconds) {
+    constructor(uint256 _seconds) payable {
+        require(msg.value >= 10 wei, "Minimum deposit of 10 wei required");
         owner_address = msg.sender; // Set the contract owner address
         setPollEndTime(_seconds);
     }
@@ -228,7 +229,10 @@ contract YesNo {
         uint256 spent;
         bool claimed;
         (earned, spent, claimed) = GetEarnings();
-        require(earned > 0 && spent > 0 && !claimed, "No earnings to claim");
+        require(
+            earned > 0 && spent > 0 && !claimed,
+            "No earnings to claim or already claimed"
+        );
 
         voters[msg.sender].claimed[game_id] = true;
         voters[msg.sender].credits = voters[msg.sender].credits.add(earned);

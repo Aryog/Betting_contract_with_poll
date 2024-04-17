@@ -5,35 +5,43 @@ import "./YesNo.sol";
 
 contract Marketplace {
     enum Winner {
+        YETNOTCONFIRMED,
         YES,
         NO,
         DRAW
     }
 
     struct YesNoContractInfo {
+        uint256 contractId;
         YesNo contractInstance;
         bool isArchived;
-        uint endTime;
+        uint256 endTime;
         Winner winner;
     }
 
     mapping(address => YesNoContractInfo[]) public ownerToYesNoContract;
-    mapping(uint => YesNo) public yesNoContracts; // Map YesNo contract addresses to a unique identifier
+    mapping(uint256 => YesNo) public yesNoContracts; // Map YesNo contract addresses to a unique identifier
 
-    uint public nextContractId = 1;
+    uint256 private nextContractId = 1;
 
     constructor() {}
 
-    function createYesNoContract(uint endTime) external {
+    function createYesNoContract(uint256 endTime) external {
         YesNo newYesNoContract = new YesNo();
         ownerToYesNoContract[msg.sender].push(
-            YesNoContractInfo(newYesNoContract, false, endTime, Winner.YES)
+            YesNoContractInfo(
+                nextContractId,
+                newYesNoContract,
+                false,
+                endTime,
+                Winner.YETNOTCONFIRMED
+            )
         );
         yesNoContracts[nextContractId] = newYesNoContract;
         nextContractId++;
     }
 
-    function archiveYesNoContract(uint contractId) external {
+    function archiveYesNoContract(uint256 contractId) external {
         require(
             ownerToYesNoContract[msg.sender].length > contractId,
             "Invalid contractId"
@@ -51,9 +59,7 @@ contract Marketplace {
         );
 
         // Calculate the winner using the GetWinner function from the YesNo contract
-        string memory winnerString = contractInfo.contractInstance.GetWinner(
-            block.number / BLOCK_DIV
-        );
+        string memory winnerString = contractInfo.contractInstance.GetWinner();
         Winner winner;
         if (
             keccak256(abi.encodePacked((winnerString))) ==
@@ -75,4 +81,42 @@ contract Marketplace {
     }
 
     // Additional functions for marketplace interactions can be added here
+
+    // Function to get YesNo contract addresses owned by the caller
+    function getUserSpecificContractAddress()
+        public
+        view
+        returns (address[] memory)
+    {
+        uint256 length = ownerToYesNoContract[msg.sender].length;
+        address[] memory allContracts = new address[](length);
+        for (uint256 i = 0; i < length; i++) {
+            allContracts[i] = address(
+                ownerToYesNoContract[msg.sender][i].contractInstance
+            );
+        }
+        return allContracts;
+    }
+
+    function getUserSpecificContractId()
+        public
+        view
+        returns (uint256[] memory)
+    {
+        uint256 length = ownerToYesNoContract[msg.sender].length;
+        uint256[] memory allContractIds = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            allContractIds[i] = ownerToYesNoContract[msg.sender][i].contractId;
+        }
+        return allContractIds;
+    }
+
+    // Get user specific contract details as YesNoContractInfo[]
+    function getUserSpecificContractDetails()
+        public
+        view
+        returns (YesNoContractInfo[] memory)
+    {
+        return ownerToYesNoContract[msg.sender];
+    }
 }
