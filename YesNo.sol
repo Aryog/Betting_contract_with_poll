@@ -1,4 +1,5 @@
 pragma solidity >=0.7.0 <0.9.0;
+import "./Bank.sol";
 
 /*
  *  Idea - YES/NO is a one-side-wins-it-all voting game.
@@ -92,110 +93,106 @@ library SafeMath {
 
 /******************************************************************************/
 
+// Main contract for the Yes/No voting game
 contract YesNo {
-    ////////////////////////////////////////////////////////////////////////////
+    using SafeMath for uint256; // Using SafeMath library for uint256 type
 
-    using SafeMath for uint256;
-
-    ////////////////////////////////////////////////////////////////////////////
-
-    uint constant BLOCK_DIV = 4096; // can initailize with the block count as time based
-
-    /////////////////////////////////////////////////////////////////////////////
+    // uint256 constant BLOCK_DIV = 4096; // Number of blocks per game
+    uint256 pollEndTime;
     enum VoteType {
         VOTE_YES,
         VOTE_NO
-    }
+    } // Enumeration for vote types
 
-    /*
-     *  A `Vote` is the core of the is contract, this corresponds to some amount
-     *  of ether (or X) being bet for the specified block number. The block
-     *  number is of significance since each bet that a user makes falls within
-     *  a `game` which spans `BLOCK_DIV` blocks.
-     */
+    // Struct to represent a vote
     struct Vote {
-        uint256 game_id /* block.number / `BLOCK_DIV` */; // Only for the event info
-        uint256 amount /* credits, 1 eth = 1000 credits */;
-        VoteType vote_type /* yes or no? */;
+        uint256 game_id; // ID of the game (block number divided by BLOCK_DIV)
+        uint256 amount; // Amount of credits bet
+        VoteType vote_type; // Type of vote (Yes or No)
     }
 
-    /*
-     *  A `Poll` represents one of the `BLOCK_DIV` block polls.
-     */
+    // Struct to represent poll totals for a game
     struct Poll {
-        uint256 yes_total;
-        uint256 no_total;
+        uint256 yes_total; // Total credits bet for Yes
+        uint256 no_total; // Total credits bet for No
+        uint256 yes_count; // Number of Yes votes
+        uint256 no_count; // Number of No votes
     }
 
-    /*
-     *  A `Voter` represents one player's balance, votes and amount in play.
-     */
+    // Struct to represent a voter
     struct Voter {
-        mapping(uint256 => Vote[]) votes;
-        mapping(uint256 => bool) claimed;
-        uint256 credits;
+        mapping(uint256 => Vote[]) votes; // Mapping of game IDs to votes
+        mapping(uint256 => bool) claimed; // Mapping of game IDs to claimed status
+        // know the credits available from the Bank Contract
+        // uint256 credits; // Credits balance of the voter
     }
 
-    ////////////////////////////////////////////////////////////////////////////
+    mapping(address => Voter) private voters; // Mapping of addresses to voters
+    mapping(uint256 => Poll) private poll_totals; // Mapping of game IDs to poll totals
 
-    mapping(address => Voter) private voters;
-    mapping(uint256 => Poll) private poll_totals;
+    event NewVoteCast(); // Event emitted when a new vote is cast
 
-    ////////////////////////////////////////////////////////////////////////////
+    address public owner_address; // Address of the contract owner
+    address private marketplace;
+    address payable public bankContract;
 
-    /*
-     *  The poll broadcast will automatically encode the block number that the
-     *  log was created with. This allows any client to update the round totals
-     *  by querying the contract's public view methods.
-     */
-    event NewVoteCast();
-
-    address public owner_address;
-
-    constructor() {
-        owner_address = msg.sender;
+    // Constructor function to initialize the contract
+    constructor(
+        uint256 _seconds,
+        address _owner,
+        address payable _bankAddress
+    ) payable {
+        require(msg.value >= 10 wei, "Minimum deposit of 10 wei required");
+        owner_address = _owner; // Set the contract owner address
+        marketplace = msg.sender;
+        bankContract = _bankAddress;
+        setPollEndTime(_seconds);
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-
-    function BuyCredits() public payable returns (bool) {
-        voters[msg.sender].credits = voters[msg.sender].credits.add(msg.value);
-        return true;
+    // Here after the necessary checks only the marketplace is the owner
+    modifier onlyOwner() {
+        require(
+            msg.sender == owner_address,
+            "Only the contract owner can call this function"
+        );
+        _;
     }
 
-    function WithdrawCredits(uint amount) public {
-        require(amount <= voters[msg.sender].credits, "Need more minerals");
-        voters[msg.sender].credits = voters[msg.sender].credits.sub(amount);
-        payable(msg.sender).transfer(amount);
+    modifier onlyMarketPlace() {
+        require(
+            msg.sender == marketplace,
+            "Only marketplace can set the endTime"
+        );
+        _;
     }
 
-    function GetCreditBalance() public view returns (uint) {
-        return voters[msg.sender].credits;
+    // Function to get the totals for a specific game
+    function GetGameTotals()
+        public
+        view
+        returns (uint256, uint256, uint256, uint256)
+    {
+        require(0 < (pollEndTime / block.timestamp), "Game not yet finished");
+        return (
+            poll_totals[0].yes_total,
+            poll_totals[0].no_total,
+            poll_totals[0].yes_count,
+            poll_totals[0].no_count
+        );
     }
 
-    ////////////////////////////////////////////////////////////////////////////
+    // Function to get the earnings of a user
+    function GetEarnings() public view returns (uint256, uint256, bool) {
+        uint game_id = pollEndTime / block.timestamp;
+        require(block.timestamp / pollEndTime > 0, "No game has finished yet");
 
-    function GetCurrentGame() public view returns (uint) {
-        return block.number / BLOCK_DIV;
-    }
+        uint256 earned = 0; // Round winnings
+        uint256 spent = 0; // Spend counter
+        bool claimed = voters[msg.sender].claimed[game_id]; // Check if earnings are claimed
+        uint256 r = poll_totals[game_id].yes_total; // Total credits bet for Yes
+        uint256 b = poll_totals[game_id].no_total; // Total credits bet for No
 
-    function GetGameTotals(uint index) public view returns (uint, uint) {
-        require(index <= (block.number / BLOCK_DIV));
-        return (poll_totals[index].yes_total, poll_totals[index].no_total);
-    }
-
-    function GetEarnings(uint game_id) public view returns (uint, uint, bool) {
-        uint current_game_id = block.number / BLOCK_DIV;
-        require(game_id <= current_game_id);
-
-        uint256 earned = 0; /* Round winnings */
-        uint256 spent = 0; /* Spend counter  */
-        bool claimed = voters[msg.sender].claimed[game_id]; /* Naughty check  */
-        require(!claimed, "Naughty Claim");
-        uint256 r = poll_totals[game_id].yes_total;
-        uint256 b = poll_totals[game_id].no_total;
-
-        for (uint i = 0; i < voters[msg.sender].votes[game_id].length; i++) {
+        for (uint256 i = 0; i < voters[msg.sender].votes[game_id].length; i++) {
             uint256 amt = voters[msg.sender].votes[game_id][i].amount;
             spent = spent.add(amt);
 
@@ -217,61 +214,99 @@ contract YesNo {
                 earned = earned.add(amt);
             }
         }
+
         return (earned, spent, claimed);
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-
-    function ClaimEarnings(uint game_id) public {
-        uint256 current_game_id = block.number / BLOCK_DIV;
-        require(game_id != current_game_id, "Cannot claim for active round");
-        require(
-            voters[msg.sender].claimed[game_id] == false,
-            "Double claim? naughty naughty"
+    // Function to deposit funds into the Bank contract
+    function depositFunds(address _depositor, uint256 amount) external payable {
+        // Call the deposit function of the Bank contract
+        Bank(bankContract).depositFromYesNo{value: amount}(
+            _depositor,
+            marketplace
         );
+    }
+
+    // Function for users to claim their earnings
+    function ClaimEarnings(uint256 game_id) public {
+        require(block.timestamp > pollEndTime, "Vote not yet finished.");
 
         uint256 earned;
         uint256 spent;
         bool claimed;
-        (earned, spent, claimed) = GetEarnings(game_id);
+        (earned, spent, claimed) = GetEarnings();
         require(
             earned > 0 && spent > 0 && !claimed,
-            "Can't make what you don't spend"
+            "No earnings to claim or already claimed"
         );
+
         voters[msg.sender].claimed[game_id] = true;
-        voters[msg.sender].credits = voters[msg.sender].credits.add(earned);
-        return;
+        // voters[msg.sender].credits = voters[msg.sender].credits.add(earned);
+        // depositFunds(msg.sender, earned);
+        Bank(bankContract).depositFromYesNo{value: earned}(
+            msg.sender,
+            marketplace
+        );
     }
 
-    ////////////////////////////////////////////////////////////////////////////
+    // Function to withdraw funds from the Bank contract
+    function withdrawFunds(
+        uint256 amount,
+        address payable _withdrawer
+    ) external payable {
+        // Here withdrawer is the person whose amount is to be withdrawn from the bank
+        Bank(payable(bankContract)).withdrawFromYesNo(
+            _withdrawer,
+            amount,
+            marketplace
+        );
+    }
 
-    function CastVote(uint amount, VoteType vote_type) public {
-        require(amount <= voters[msg.sender].credits, "Not enough credits");
+    // Function for users to cast their votes
+    function CastVote(uint256 amount, VoteType vote_type) external payable {
+        require(amount > 0, "Amount must be greater than zero");
+        // require(amount <= voters[msg.sender].credits, "Insufficient credits");
+        // Check bank or credit balance here
+        require(checkBankBalance() >= amount, "Insufficient credits");
+        require(pollEndTime > block.timestamp, "Voting time has ended");
+
+        uint256 gameID = block.timestamp / pollEndTime;
 
         Vote memory v;
-        v.game_id = block.number / BLOCK_DIV;
+        v.game_id = gameID;
         v.amount = amount;
         v.vote_type = vote_type;
-        uint256 gameID = block.number / BLOCK_DIV;
+
         if (vote_type == VoteType.VOTE_YES) {
             poll_totals[gameID].yes_total = poll_totals[gameID].yes_total.add(
                 amount
+            );
+            poll_totals[gameID].yes_count = poll_totals[gameID].yes_count.add(
+                1
             );
         } else if (vote_type == VoteType.VOTE_NO) {
             poll_totals[gameID].no_total = poll_totals[gameID].no_total.add(
                 amount
             );
+            poll_totals[gameID].no_count = poll_totals[gameID].no_count.add(1);
         }
-        voters[msg.sender].credits = voters[msg.sender].credits.sub(amount);
-        voters[msg.sender].votes[block.number / BLOCK_DIV].push(v);
+
+        // voters[msg.sender].credits = voters[msg.sender].credits.sub(amount);
+        // withdrawFunds(amount, payable(msg.sender));
+        Bank(payable(bankContract)).withdrawFromYesNo(
+            payable(msg.sender),
+            amount,
+            marketplace
+        );
+        voters[msg.sender].votes[gameID].push(v);
         emit NewVoteCast();
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-
+    // Function to get the winner of the current game
     function GetWinner() public view returns (string memory) {
-        uint current_game_id = block.number / BLOCK_DIV;
-        require(current_game_id > 0, "No game has finished yet");
+        uint256 current_game_id = pollEndTime / block.timestamp;
+        // require(current_game_id > 0, "No game has finished yet");
+        require(pollEndTime < block.timestamp, "No game has finished yet");
 
         uint256 yesTotal = poll_totals[current_game_id].yes_total;
         uint256 noTotal = poll_totals[current_game_id].no_total;
@@ -284,6 +319,35 @@ contract YesNo {
             return "DRAW";
         }
     }
+
+    // For the development purposes
+    function GetCurrentRunningBlock()
+        public
+        view
+        returns (uint256, uint256, uint256)
+    {
+        return (block.number, block.timestamp, block.number);
+    }
+
+    function setPollEndTime(uint256 _seconds) private onlyMarketPlace {
+        pollEndTime = (block.timestamp).add(_seconds); // 60 seconds for voting
+    }
+
+    // Function to set the end time for voting
+    function checkPollEndTime() public view returns (uint256) {
+        return pollEndTime;
+    }
+
+    function getOwner() public view returns (address) {
+        return owner_address;
+    }
+
+    function checkBankBalance() internal view returns (uint256) {
+        return Bank(bankContract).balanceOf(msg.sender);
+    }
+
+    // Receive function to accept incoming ether
+    receive() external payable {}
 }
 
 /******************************************************************************/

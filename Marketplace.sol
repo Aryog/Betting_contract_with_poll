@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.7.0 <0.9.0;
 
-import "./YesNo1.sol";
+import "./YesNo.sol";
 
 contract Marketplace {
     enum Winner {
@@ -21,15 +21,18 @@ contract Marketplace {
 
     mapping(address => YesNoContractInfo[]) public ownerToYesNoContract;
     mapping(uint256 => YesNo) public yesNoContracts; // Map YesNo contract addresses to a unique identifier
-
+    address payable private bankAddress;
     uint256 private nextContractId = 1;
 
-    constructor() {}
+    constructor(address payable _bankAddress) {
+        bankAddress = _bankAddress;
+    }
 
     function createYesNoContract(uint256 endTime) external payable {
         YesNo newYesNoContract = (new YesNo{value: msg.value})(
             endTime,
-            msg.sender
+            msg.sender,
+            bankAddress
         );
         ownerToYesNoContract[msg.sender].push(
             YesNoContractInfo(
@@ -46,40 +49,43 @@ contract Marketplace {
 
     function archiveYesNoContract(uint256 contractId) external {
         require(
-            ownerToYesNoContract[msg.sender].length >= contractId,
+            ownerToYesNoContract[msg.sender].length > contractId,
             "Invalid contractId"
         );
+
         YesNoContractInfo storage contractInfo = ownerToYesNoContract[
             msg.sender
         ][contractId];
+        require(!contractInfo.isArchived, "Contract is already archived");
         require(
             block.timestamp >= contractInfo.endTime,
-            "Contract not ended yet"
+            "Contract has not ended yet"
         );
+
+        YesNo contractInstance = YesNo(payable(contractInfo.contractInstance));
         require(
-            msg.sender == YesNo(contractInfo.contractInstance).getOwner(),
+            msg.sender == contractInstance.getOwner(),
             "Only owner can archive"
         );
 
-        // Calculate the winner using the GetWinner function from the YesNo contract
-        string memory winnerString = YesNo(contractInfo.contractInstance)
-            .GetWinner();
+        // Get the winner from the Yes/No contract
+        string memory winnerString = contractInstance.GetWinner();
         Winner winner;
         if (
-            keccak256(abi.encodePacked((winnerString))) ==
-            keccak256(abi.encodePacked(("YES")))
+            keccak256(abi.encodePacked(winnerString)) ==
+            keccak256(abi.encodePacked("YES"))
         ) {
             winner = Winner.YES;
         } else if (
-            keccak256(abi.encodePacked((winnerString))) ==
-            keccak256(abi.encodePacked(("NO")))
+            keccak256(abi.encodePacked(winnerString)) ==
+            keccak256(abi.encodePacked("NO"))
         ) {
             winner = Winner.NO;
         } else {
             winner = Winner.DRAW;
         }
 
-        // Update the winner information in the YesNoContractInfo struct
+        // Update contract info
         contractInfo.winner = winner;
         contractInfo.isArchived = true;
     }
